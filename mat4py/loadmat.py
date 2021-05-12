@@ -6,6 +6,8 @@ The MIT License (MIT)
 
 __all__ = ['loadmat']
 
+## dirty hack
+_permissive = False
 
 import struct
 import sys
@@ -160,9 +162,10 @@ def read_element_tag(fd, endian):
     if num_bytes > 0:
         # small data element format
         mtpn = mtpn & 0xFFFF
-        if num_bytes > 4:
-            raise ParseError('Error parsing Small Data Element (SDE) '
-                             'formatted data')
+        if not _permissive:
+            if num_bytes > 4:
+                raise ParseError('Error parsing Small Data Element (SDE) '
+                                'formatted data')
         data = data[4:4 + num_bytes]
     else:
         # regular element
@@ -178,10 +181,11 @@ def read_elements(fd, endian, mtps, is_name=False):
     of the elements are verified.
     """
     mtpn, num_bytes, data = read_element_tag(fd, endian)
-    if mtps and mtpn not in [etypes[mtp]['n'] for mtp in mtps]:
-        raise ParseError('Got type {}, expected {}'.format(
-            mtpn, ' / '.join('{} ({})'.format(
-                etypes[mtp]['n'], mtp) for mtp in mtps)))
+    if not _permissive:
+        if mtps and mtpn not in [etypes[mtp]['n'] for mtp in mtps]:
+            raise ParseError('Got type {}, expected {}'.format(
+                mtpn, ' / '.join('{} ({})'.format(
+                    etypes[mtp]['n'], mtp) for mtp in mtps)))
     if not data:
         # full format, read data
         data = fd.read(num_bytes)
@@ -245,13 +249,15 @@ def read_var_header(fd, endian):
         fd = fd_var
         # Check the stream is not so broken as to leave cruft behind
         if dcor.flush() != b'':
-            raise ParseError('Error in compressed data.')
+            if not _permissive:
+                raise ParseError('Error in compressed data.')
         # read full tag from the uncompressed data
         mtpn, num_bytes = unpack(endian, 'II', fd.read(8))
 
     if mtpn != etypes['miMATRIX']['n']:
-        raise ParseError('Expecting miMATRIX type number {}, '
-                         'got {}'.format(etypes['miMATRIX']['n'], mtpn))
+        if not _permissive:
+            raise ParseError('Expecting miMATRIX type number {}, '
+                            'got {}'.format(etypes['miMATRIX']['n'], mtpn))
     # read the header
     header = read_header(fd, endian)
     return header, next_pos, fd
@@ -313,8 +319,9 @@ def read_struct_array(fd, endian, header):
     # read field name length (unused, as strings are null terminated)
     field_name_length = read_elements(fd, endian, ['miINT32'])
     if field_name_length > 32:
-        raise ParseError('Unexpected field name length: {}'.format(
-                         field_name_length))
+        if not _permissive:
+            raise ParseError('Unexpected field name length: {}'.format(
+                            field_name_length))
 
     # read field names
     fields = read_elements(fd, endian, ['miINT8'], is_name=True)
@@ -357,27 +364,33 @@ def read_char_array(fd, endian, header):
 
 def read_var_array(fd, endian, header):
     """Read variable array (of any supported type)."""
-    mc = inv_mclasses[header['mclass']]
+    try:
+        mc = inv_mclasses[header['mclass']]
 
-    if mc in numeric_class_etypes:
-        return read_numeric_array(
-            fd, endian, header,
-            set(compressed_numeric).union([numeric_class_etypes[mc]])
-        )
-    elif mc == 'mxSPARSE_CLASS':
-        raise ParseError('Sparse matrices not supported')
-    elif mc == 'mxCHAR_CLASS':
-        return read_char_array(fd, endian, header)
-    elif mc == 'mxCELL_CLASS':
-        return read_cell_array(fd, endian, header)
-    elif mc == 'mxSTRUCT_CLASS':
-        return read_struct_array(fd, endian, header)
-    elif mc == 'mxOBJECT_CLASS':
-        raise ParseError('Object classes not supported')
-    elif mc == 'mxFUNCTION_CLASS':
-        raise ParseError('Function classes not supported')
-    elif mc == 'mxOPAQUE_CLASS':
-        raise ParseError('Anonymous function classes not supported')
+        if mc in numeric_class_etypes:
+            return read_numeric_array(
+                fd, endian, header,
+                set(compressed_numeric).union([numeric_class_etypes[mc]])
+            )
+        elif mc == 'mxSPARSE_CLASS':
+            raise ParseError('Sparse matrices not supported')
+        elif mc == 'mxCHAR_CLASS':
+            return read_char_array(fd, endian, header)
+        elif mc == 'mxCELL_CLASS':
+            return read_cell_array(fd, endian, header)
+        elif mc == 'mxSTRUCT_CLASS':
+            return read_struct_array(fd, endian, header)
+        elif mc == 'mxOBJECT_CLASS':
+            raise ParseError('Object classes not supported')
+        elif mc == 'mxFUNCTION_CLASS':
+            raise ParseError('Function classes not supported')
+        elif mc == 'mxOPAQUE_CLASS':
+            raise ParseError('Anonymous function classes not supported')
+    except ParseError:
+        if not _permissive:
+            raise
+        else:
+            return "ParseError"
 
 
 def eof(fd):
@@ -399,7 +412,7 @@ class ParseError(Exception):
 #
 
 
-def loadmat(filename, meta=False):
+def loadmat(filename, meta=False, permissive=False):
     """Load data from MAT-file:
 
     data = loadmat(filename, meta=False)
@@ -415,7 +428,11 @@ def loadmat(filename, meta=False):
 
     A ``ParseError`` exception is raised if the MAT-file is corrupt or
     contains a data type that cannot be parsed.
+
+    Call with permissive=True to also load corruput MAT-files
     """
+    global _permissive
+    _permissive = permissive
 
     if isinstance(filename, basestring):
         fd = open(filename, 'rb')
@@ -460,8 +477,11 @@ def loadmat(filename, meta=False):
         hdr, next_position, fd_var = read_var_header(fd, endian)
         name = hdr['name']
         if name in mdict:
-            raise ParseError('Duplicate variable name "{}" in mat file.'
-                             .format(name))
+            if not _permissive:
+                raise ParseError('Duplicate variable name "{}" in mat file.'
+                                .format(name))
+            else:
+                name += "0"
 
         # read the matrix
         mdict[name] = read_var_array(fd_var, endian, hdr)
