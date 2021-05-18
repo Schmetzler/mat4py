@@ -301,7 +301,10 @@ def read_numeric_array(fd, endian, header, data_etypes):
         array = list(data)
         header["dims"] = [1, len(array)]
     else:
-        array = [data[i:i+colcount] for i in range(0, len(data), colcount)]
+        array = [
+            list(data[c * rowcount + r] for c in range(colcount))
+            for r in range(rowcount)
+        ]
     return squeeze(array)
 
 
