@@ -6,9 +6,6 @@ The MIT License (MIT)
 
 __all__ = ['loadmat']
 
-## dirty hack
-_permissive = False
-
 import struct
 import sys
 import zlib
@@ -28,10 +25,18 @@ except ImportError:
     ispy2 = False
 from io import BytesIO
 
+# # dirty hack
+_permissive = False
+
 
 # encode a string to bytes and vice versa
-asbytes = lambda s: s.encode('latin1')
-asstr = lambda b: b.decode('latin1')
+def asbytes(s):
+    return s.encode('latin1')
+
+
+def asstr(b):
+    return b.decode('latin1')
+
 
 # array element data types
 etypes = {
@@ -122,7 +127,7 @@ def unpack(endian, fmt, data):
     else:
         # read a number of values
         num = len(data) // struct.calcsize(fmt)
-        val = struct.unpack(''.join([endian, str(num), fmt]), data)
+        val = list(struct.unpack(''.join([endian, str(num), fmt]), data))
         if len(val) == 1:
             val = val[0]
     return val
@@ -164,8 +169,10 @@ def read_element_tag(fd, endian):
         mtpn = mtpn & 0xFFFF
         if not _permissive:
             if num_bytes > 4:
-                raise ParseError('Error parsing Small Data Element (SDE) '
-                                'formatted data')
+                raise ParseError(
+                    'Error parsing Small Data Element (SDE) '
+                    'formatted data'
+                )
         data = data[4:4 + num_bytes]
     else:
         # regular element
@@ -256,8 +263,10 @@ def read_var_header(fd, endian):
 
     if mtpn != etypes['miMATRIX']['n']:
         if not _permissive:
-            raise ParseError('Expecting miMATRIX type number {}, '
-                            'got {}'.format(etypes['miMATRIX']['n'], mtpn))
+            raise ParseError(
+                'Expecting miMATRIX type number {}, '
+                'got {}'.format(etypes['miMATRIX']['n'], mtpn)
+            )
     # read the header
     header = read_header(fd, endian)
     return header, next_pos, fd
@@ -287,9 +296,12 @@ def read_numeric_array(fd, endian, header, data_etypes):
     # a row major array of nested lists
     rowcount = header['dims'][0]
     colcount = header['dims'][1]
-    array = [list(data[c * rowcount + r] for c in range(colcount))
-             for r in range(rowcount)]
-    # pack and return the array
+
+    if rowcount == 1 or colcount == 1:
+        array = list(data)
+        header["dims"] = [1, len(array)]
+    else:
+        array = [data[i:i+colcount] for i in range(0, len(data), colcount)]
     return squeeze(array)
 
 
@@ -329,7 +341,6 @@ def read_struct_array(fd, endian, header):
         fields = [fields]
 
     # read rows and columns of each field
-    empty = lambda: [list() for i in range(header['dims'][0])]
     array = {}
     for row in range(header['dims'][0]):
         for col in range(header['dims'][1]):
@@ -338,7 +349,7 @@ def read_struct_array(fd, endian, header):
                 vheader, next_pos, fd_var = read_var_header(fd, endian)
                 data = read_var_array(fd_var, endian, vheader)
                 if field not in array:
-                    array[field] = empty()
+                    array[field] = [list() for i in range(header['dims'][0])]
                 array[field][row].append(data)
                 # move on to next field
                 fd.seek(next_pos)
@@ -478,8 +489,10 @@ def loadmat(filename, meta=False, permissive=False):
         name = hdr['name']
         if name in mdict:
             if not _permissive:
-                raise ParseError('Duplicate variable name "{}" in mat file.'
-                                .format(name))
+                raise ParseError(
+                    'Duplicate variable name "{}" in mat file.'
+                    .format(name)
+                )
             else:
                 name += "0"
 

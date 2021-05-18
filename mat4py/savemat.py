@@ -27,73 +27,8 @@ except ImportError:
     ispy2 = False
 from io import BytesIO
 
-
-# encode a string to bytes and vice versa
-asbytes = lambda s: s.encode('latin1')
-asstr = lambda b: b.decode('latin1')
-
-# array element data types
-etypes = {
-    'miINT8': {'n': 1, 'fmt': 'b'},
-    'miUINT8': {'n': 2, 'fmt': 'B'},
-    'miINT16': {'n': 3, 'fmt': 'h'},
-    'miUINT16': {'n': 4, 'fmt': 'H'},
-    'miINT32': {'n': 5, 'fmt': 'i'},
-    'miUINT32': {'n': 6, 'fmt': 'I'},
-    'miSINGLE': {'n': 7, 'fmt': 'f'},
-    'miDOUBLE': {'n': 9, 'fmt': 'd'},
-    'miINT64': {'n': 12, 'fmt': 'q'},
-    'miUINT64': {'n': 13, 'fmt': 'Q'},
-    'miMATRIX': {'n': 14},
-    'miCOMPRESSED': {'n': 15},
-    'miUTF8': {'n': 16, 'fmt': 's'},
-    'miUTF16': {'n': 17, 'fmt': 's'},
-    'miUTF32': {'n': 18, 'fmt': 's'}
-}
-
-# inverse mapping of etypes
-inv_etypes = dict((v['n'], k) for k, v in etypes.items())
-
-# matrix array classes
-mclasses = {
-    'mxCELL_CLASS': 1,
-    'mxSTRUCT_CLASS': 2,
-    'mxOBJECT_CLASS': 3,
-    'mxCHAR_CLASS': 4,
-    'mxSPARSE_CLASS': 5,
-    'mxDOUBLE_CLASS': 6,
-    'mxSINGLE_CLASS': 7,
-    'mxINT8_CLASS': 8,
-    'mxUINT8_CLASS': 9,
-    'mxINT16_CLASS': 10,
-    'mxUINT16_CLASS': 11,
-    'mxINT32_CLASS': 12,
-    'mxUINT32_CLASS': 13,
-    'mxINT64_CLASS': 14,
-    'mxUINT64_CLASS': 15,
-    'mxFUNCTION_CLASS': 16,
-    'mxOPAQUE_CLASS': 17,
-    'mxOBJECT_CLASS_FROM_MATRIX_H': 18
-}
-
-# map of numeric array classes to data types
-numeric_class_etypes = {
-    'mxDOUBLE_CLASS': 'miDOUBLE',
-    'mxSINGLE_CLASS': 'miSINGLE',
-    'mxINT8_CLASS': 'miINT8',
-    'mxUINT8_CLASS': 'miUINT8',
-    'mxINT16_CLASS': 'miINT16',
-    'mxUINT16_CLASS': 'miUINT16',
-    'mxINT32_CLASS': 'miINT32',
-    'mxUINT32_CLASS': 'miUINT32',
-    'mxINT64_CLASS': 'miINT64',
-    'mxUINT64_CLASS': 'miUINT64'
-}
-
-inv_mclasses = dict((v, k) for k, v in mclasses.items())
-
-# data types that may be used when writing numeric data
-compressed_numeric = ['miINT32', 'miUINT16', 'miINT16', 'miUINT8']
+from .loadmat import asbytes, \
+    etypes, numeric_class_etypes, mclasses
 
 
 def diff(iterable):
@@ -122,6 +57,7 @@ def write_file_header(fd):
     else:
         fd.write(struct.pack('2s', b'IM'))
 
+
 def write_elements(fd, mtp, data, is_name=False):
     """Write data element tag and data.
 
@@ -144,13 +80,13 @@ def write_elements(fd, mtp, data, is_name=False):
             else:
                 fmt = ''.join('{}s'.format(len(s)) for s in data)
         else:
-            l = len(data)
-            if l == 0:
+            dl = len(data)
+            if dl == 0:
                 # empty array
                 fmt = ''
-            if l > 1:
+            if dl > 1:
                 # more than one element to be written
-                fmt = '{}{}'.format(l, fmt)
+                fmt = '{}{}'.format(dl, fmt)
     else:
         data = (data,)
     num_bytes = struct.calcsize(fmt)
@@ -171,6 +107,7 @@ def write_elements(fd, mtp, data, is_name=False):
     # write data
     fd.write(struct.pack(fmt, *data))
 
+
 def write_var_header(fd, header):
     """Write variable header"""
 
@@ -185,6 +122,7 @@ def write_var_header(fd, header):
     # write var name
     write_elements(fd, 'miINT8', asbytes(header['name']), is_name=True)
 
+
 def write_var_data(fd, data):
     """Write variable data to file"""
     # write array data elements (size info)
@@ -192,6 +130,7 @@ def write_var_data(fd, data):
 
     # write the data
     fd.write(data)
+
 
 def write_compressed_var_array(fd, array, name):
     """Write compressed variable data to file"""
@@ -207,6 +146,7 @@ def write_compressed_var_array(fd, array, name):
 
     # write the compressed data
     fd.write(data)
+
 
 def write_numeric_array(fd, header, array):
     """Write the numeric array"""
@@ -228,6 +168,7 @@ def write_numeric_array(fd, header, array):
     bd.close()
     write_var_data(fd, data)
 
+
 def write_cell_array(fd, header, array):
     # make a memory file for writing array data
     bd = BytesIO()
@@ -248,6 +189,7 @@ def write_cell_array(fd, header, array):
     data = bd.getvalue()
     bd.close()
     write_var_data(fd, data)
+
 
 def write_struct_array(fd, header, array):
     # make a memory file for writing array data
@@ -291,6 +233,7 @@ def write_struct_array(fd, header, array):
     bd.close()
     write_var_data(fd, data)
 
+
 def write_char_array(fd, header, array):
     if isinstance(array, basestring):
         # split string into chars
@@ -299,6 +242,7 @@ def write_char_array(fd, header, array):
         # split each string in list into chars
         array = [[asbytes(c) for c in s] for s in array]
     return write_numeric_array(fd, header, array)
+
 
 def write_var_array(fd, array, name=''):
     """Write variable array (of any supported type)"""
@@ -315,6 +259,7 @@ def write_var_array(fd, array, name=''):
     else:
         raise ValueError('Unknown mclass {}'.format(mc))
 
+
 def isarray(array, test, dim=2):
     """Returns True if test is True for all array elements.
     Otherwise, returns False.
@@ -323,6 +268,7 @@ def isarray(array, test, dim=2):
         return all(isarray(array[i], test, dim - 1)
                    for i in range(len(array)))
     return all(test(i) for i in array)
+
 
 def guess_header(array, name=''):
     """Guess the array header information.
