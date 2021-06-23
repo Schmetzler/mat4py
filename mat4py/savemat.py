@@ -11,6 +11,7 @@ import struct
 import sys
 import time
 import zlib
+import numbers
 
 try:
     from collections.abc import Sequence, Mapping
@@ -267,6 +268,8 @@ def isarray(array, test, dim=2):
     if dim > 1:
         return all(isarray(array[i], test, dim - 1)
                    for i in range(len(array)))
+    if isinstance(array, numbers.Number):
+        return True
     return all(test(i) for i in array)
 
 
@@ -413,8 +416,10 @@ def savemat(filename, data):
 
     if isinstance(filename, basestring):
         fd = open(filename, 'wb')
+        close = True
     else:
         fd = filename
+        close = False
 
     write_file_header(fd)
 
@@ -422,4 +427,5 @@ def savemat(filename, data):
     for name, array in data.items():
         write_compressed_var_array(fd, array, name)
 
-    fd.close()
+    if close:
+        fd.close()

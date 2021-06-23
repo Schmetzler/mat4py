@@ -314,7 +314,7 @@ def read_cell_array(fd, endian, header):
     """
     array = [list() for i in range(header['dims'][0])]
     for row in range(header['dims'][0]):
-        for col in range(header['dims'][1]):
+        for _ in range(header['dims'][1]):
             # read the matrix header and array
             vheader, next_pos, fd_var = read_var_header(fd, endian)
             varray = read_var_array(fd_var, endian, vheader)
@@ -346,7 +346,7 @@ def read_struct_array(fd, endian, header):
     # read rows and columns of each field
     array = {}
     for row in range(header['dims'][0]):
-        for col in range(header['dims'][1]):
+        for _ in range(header['dims'][1]):
             for field in fields:
                 # read the matrix header and array
                 vheader, next_pos, fd_var = read_var_header(fd, endian)
@@ -450,8 +450,10 @@ def loadmat(filename, meta=False, permissive=False):
 
     if isinstance(filename, basestring):
         fd = open(filename, 'rb')
+        close = True
     else:
         fd = filename
+        close = False
 
     # Check mat file format is version 5
     # For 5 format we need to read an integer in the header.
@@ -506,6 +508,6 @@ def loadmat(filename, meta=False, permissive=False):
 
         # move on to next entry in file
         fd.seek(next_position)
-
-    fd.close()
+    if close:
+        fd.close()
     return mdict
